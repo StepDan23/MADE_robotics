@@ -1,6 +1,6 @@
 from tkinter import *
 import math
-from sympy import Point, Polygon
+from shapely.geometry import Point, Polygon
 
 '''================= Your classes and methods ================='''
 
@@ -41,8 +41,8 @@ def collides(position, obstacle):
     return get_polygon_from_position(position).intersection(get_polygon_from_obstacle(obstacle))
 
 
-class Window():
-    '''================= Your Main Function ================='''
+class Window:
+    """================= Your Main Function ================="""
 
     def go(self, event):
 

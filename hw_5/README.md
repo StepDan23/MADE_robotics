@@ -3,11 +3,19 @@
 In this homework assignment you are going to implement an algorithm for 
 trajectory calculation for a self-driving car in a parking lot.
 
-**Note:** Python 3.6 and higher with TKinter is required. Install sympy
+**Note:** Python 3+ with TKinter is required.
 
-`pip install sympy`
+Installations
+```bash
+brew install python-tk@3.9
+pip3 install shapely
+```
 
 for computing collisions.
+## Launch
+```bash
+python3 tkinter_router.py
+```
 
 ## Task editor
 
