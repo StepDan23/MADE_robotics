@@ -1,7 +1,8 @@
 from tkinter import *
 import math
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Polygon
 
+STEP_SIZE = 20
 '''================= Your classes and methods ================='''
 
 
@@ -26,23 +27,52 @@ def rotate(points, angle, center):
 
 def get_polygon_from_position(position):
     x, y, yaw = position
-    points = [(x - 50, y - 100), (x + 50, y - 100), (x + 50, y + 100), (x - 50, y + 100)]
+    points = [(x - 50, y - 100), (x + 50, y - 100), (x + 50, y + 100), (x - 50, y + 100), (x - 50, y - 100)]
     new_points = rotate(points, yaw * 180 / math.pi, (x, y))
-    return Polygon(*list(map(Point, new_points)))
+    return Polygon(new_points)
 
 
 def get_polygon_from_obstacle(obstacle):
     points = [(obstacle[0], obstacle[1]), (obstacle[2], obstacle[3]), (obstacle[4], obstacle[5]),
-              (obstacle[6], obstacle[7])]
-    return Polygon(*list(map(Point, points)))
+              (obstacle[6], obstacle[7]), (obstacle[0], obstacle[1])]
+    return Polygon(points)
 
 
 def collides(position, obstacle):
     return get_polygon_from_position(position).intersection(get_polygon_from_obstacle(obstacle))
 
 
+class Node:
+    def __init__(self, position, children=None, root=None):
+        self.pos = (int(position[0]), int(position[1]), round(position[2], 1))
+        self.root = root
+        self.children = [] if children is None else children
+
+    def __eq__(self, other):
+        _POS_EPS = 10
+        _ANGLE_EPS = math.pi / 8
+
+        if (abs(self.pos[0] - other.pos[0]) < _POS_EPS
+                and abs(self.pos[1] - other.pos[1]) < _POS_EPS
+                and abs(self.pos[2] - other.pos[2]) < _ANGLE_EPS):
+            print('equals', self.pos, other.pos)
+            return True
+        else:
+            return False
+
+
 class Window:
     """================= Your Main Function ================="""
+
+    def __init__(self):
+        self.root = Tk()
+        self.root.title("")
+        self.width = self.root.winfo_screenwidth()
+        self.height = self.root.winfo_screenheight()
+        self.root.geometry(f'{self.width}x{self.height}')
+        self.canvas = Canvas(self.root, bg="#777777", height=self.height, width=self.width)
+        self.canvas.pack()
+        self.obstacles = []
 
     def go(self, event):
 
@@ -50,15 +80,68 @@ class Window:
 
         print("Start position:", self.get_start_position())
         print("Target position:", self.get_target_position())
-        print("Obstacles:", self.get_obstacles())
+        self.obstacles = self.get_obstacles()
+        print("Obstacles:", self.obstacles)
 
         # Example of collision calculation
 
         number_of_collisions = 0
-        for obstacle in self.get_obstacles():
+        for obstacle in self.obstacles:
             if collides(self.get_start_position(), obstacle):
                 number_of_collisions += 1
         print("Start position collides with", number_of_collisions, "obstacles")
+
+        route = self.get_route()
+        self.draw_final_route(route)
+
+    def get_route(self):
+        route = []
+        node_seen = []
+        route.append(Node(self.get_start_position()))
+        target = Node(self.get_target_position())
+        while route:
+            route = sorted(route, key=lambda x: self.distance(x.pos[0], x.pos[1], target.pos[0], target.pos[1]),
+                           reverse=True)
+            node = route.pop()
+
+            if not any(node == n_see for n_see in node_seen):
+                print(node.pos[2], self.distance(node.pos[0], node.pos[1], target.pos[0], target.pos[1]))
+                node_seen.append(node)
+                self.draw_node(node)
+                self.canvas.update_idletasks()
+                if target == node:
+                    return node
+
+                self.make_step(node)
+                route.extend(node.children)
+
+    def make_step(self, node):
+        _N_DIRECTION = 8
+
+        for angle_id in range(_N_DIRECTION):
+            x, y, yaw = node.pos
+            yaw = (yaw + angle_id * math.pi / _N_DIRECTION) % (2 * math.pi)
+            x += math.cos(yaw) * STEP_SIZE
+            y += math.sin(yaw) * STEP_SIZE
+            pos = (x, y, yaw)
+            if self.valid_move(pos):
+                node.children.append(Node(pos, root=node))
+
+    def valid_move(self, position):
+        return not any(collides(position, obstacle) for obstacle in self.obstacles)
+
+    def draw_node(self, node, color='blue'):
+        self.canvas.create_oval(node.pos[0] - 2.0, node.pos[1] - 2.0,
+                                node.pos[0] + 2.0, node.pos[1] + 2.0,
+                                outline=color, fill=color, tag='way_point')
+
+    def draw_final_route(self, route: Node):
+        while route.root is not None:
+            x_0, y_0, _ = route.pos
+            x_1, y_1, _ = route.root.pos
+            self.canvas.create_line(x_0, y_0, x_1, y_1, width=3, tag='way_point')
+            route = route.root
+        print('route printed')
 
     '''================= Interface Methods ================='''
 
@@ -302,6 +385,20 @@ class Window:
         self.canvas.tag_bind(id, "<B1-Motion>", self.motion_block)
         self.canvas.tag_bind(id, "<B3-Motion>", self.rotate_block)
 
+    def create_button_reset(self):
+        button = Button(
+            text="Reset",
+            bg="#555555",
+            activebackground="blue",
+            borderwidth=0
+        )
+
+        button.place(rely=0.0, relx=1.0, x=-100, y=200, anchor=SE, width=100, height=200)
+        button.bind("<Button-1>", self.del_all)
+
+    def del_all(self, event):
+        self.canvas.delete("way_point")
+
     def create_button_go(self):
         button = Button(
             text="Go",
@@ -317,6 +414,7 @@ class Window:
         root = self.root
 
         self.create_button_create()
+        self.create_button_reset()
         self.create_button_go()
         self.create_green_block(self.width / 2)
         self.create_purple_block(self.width / 2, self.height)
@@ -324,16 +422,6 @@ class Window:
         root.bind("<Delete>", self.delete_block)
 
         root.mainloop()
-
-    def __init__(self):
-        self.root = Tk()
-        self.root.title("")
-        self.width = self.root.winfo_screenwidth()
-        self.height = self.root.winfo_screenheight()
-        self.root.geometry(f'{self.width}x{self.height}')
-        self.canvas = Canvas(self.root, bg="#777777", height=self.height, width=self.width)
-        self.canvas.pack()
-        # self.points = [0, 500, 500/2, 0, 500, 500]
 
 
 if __name__ == "__main__":
