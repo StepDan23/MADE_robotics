@@ -1,5 +1,7 @@
-from tkinter import *
 import math
+
+import heapq
+from tkinter import *
 from shapely.geometry import Polygon
 
 STEP_SIZE = 20
@@ -43,10 +45,12 @@ def collides(position, obstacle):
 
 
 class Node:
-    def __init__(self, position, children=None, root=None):
+    def __init__(self, position, g, heuristic_fabric, children=None, root=None):
         self.pos = (int(position[0]), int(position[1]), round(position[2], 1))
         self.root = root
         self.children = [] if children is None else children
+        self.g = g + 1
+        self.priority = heuristic_fabric(self, self.root)
 
     def __eq__(self, other):
         _POS_EPS = 10
@@ -61,6 +65,36 @@ class Node:
             return False
 
 
+class PriorityQueue:
+    def __init__(self):
+        self.heap = []
+        self.count = 0
+
+    def push(self, item, priority):
+        entry = (priority, self.count, item)
+        heapq.heappush(self.heap, entry)
+        self.count += 1
+
+    def update(self, item, priority):
+        for index, (p, c, i) in enumerate(self.heap):
+            if i == item:
+                if p <= priority:
+                    break
+                del self.heap[index]
+                self.heap.append((priority, c, item))
+                heapq.heapify(self.heap)
+                break
+        else:
+            self.push(item, priority)
+
+    def pop(self):
+        (_, _, item) = heapq.heappop(self.heap)
+        return item
+
+    def is_empty(self):
+        return len(self.heap) == 0
+
+
 class Window:
     """================= Your Main Function ================="""
 
@@ -73,6 +107,7 @@ class Window:
         self.canvas = Canvas(self.root, bg="#777777", height=self.height, width=self.width)
         self.canvas.pack()
         self.obstacles = []
+        self.target = None
 
     def go(self, event):
 
@@ -95,37 +130,44 @@ class Window:
         self.draw_final_route(route)
 
     def get_route(self):
-        route = []
-        node_seen = []
-        route.append(Node(self.get_start_position()))
-        target = Node(self.get_target_position())
-        while route:
-            route = sorted(route, key=lambda x: self.distance(x.pos[0], x.pos[1], target.pos[0], target.pos[1]),
-                           reverse=True)
-            node = route.pop()
+        route_queue = PriorityQueue()
+        start_node = Node(self.get_start_position(), 0, lambda x, y: 0)
+        route_queue.push(start_node, start_node)
+        self.target = Node(self.get_target_position(), 0, lambda x, y: 0)
 
-            if not any(node == n_see for n_see in node_seen):
-                print(node.pos[2], self.distance(node.pos[0], node.pos[1], target.pos[0], target.pos[1]))
-                node_seen.append(node)
-                self.draw_node(node)
-                self.canvas.update_idletasks()
-                if target == node:
-                    return node
+        while not route_queue.is_empty():
+            node = route_queue.pop()
 
-                self.make_step(node)
-                route.extend(node.children)
+            self.draw_node(node)
+            self.canvas.update_idletasks()
+            if self.target == node:
+                return node
+
+            self.make_step(node)
+            for child in node.children:
+                route_queue.update(child, child.priority)
 
     def make_step(self, node):
-        _N_DIRECTION = 8
+        _N_DIRECTION = 16
 
-        for angle_id in range(_N_DIRECTION):
+        for angle_id in range(_N_DIRECTION + 1):
             x, y, yaw = node.pos
             yaw = (yaw + angle_id * math.pi / _N_DIRECTION) % (2 * math.pi)
             x += math.cos(yaw) * STEP_SIZE
             y += math.sin(yaw) * STEP_SIZE
             pos = (x, y, yaw)
             if self.valid_move(pos):
-                node.children.append(Node(pos, root=node))
+                node.children.append(Node(pos, node.g, self.heuristic, root=node))
+
+    def heuristic(self, cur_node, prev_node):
+        x, y, yaw = cur_node.pos
+        dist_obsc = 0
+        for obstacle in self.obstacles:
+            dist_obsc -= self.distance(x, y, obstacle[0], obstacle[1])
+        dist = self.distance(x, y, self.target.pos[0], self.target.pos[1])
+        prev_turn = abs(prev_node.pos[2] - cur_node.pos[2]) // (math.pi / 2)
+
+        return cur_node.g + prev_turn + dist + dist_obsc / (10 * len(self.obstacles) + 1)
 
     def valid_move(self, position):
         return not any(collides(position, obstacle) for obstacle in self.obstacles)
